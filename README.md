@@ -36,4 +36,7 @@ For example:
 License MIT,
 
 Inspired by my own desire to have locking doors but not all the time.
+
 Code adapted from https://community.smartthings.com/t/auto-lock-door-only/82418
+
+Icon made by [Gregor Cresnar](https://www.flaticon.com/authors/gregor-cresnar) from [www.flaticon.com](https://www.flaticon.com/) is licensed by [CC 3.0 BY](http://creativecommons.org/licenses/by/3.0/)
