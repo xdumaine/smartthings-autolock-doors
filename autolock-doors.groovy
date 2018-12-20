@@ -16,61 +16,87 @@ preferences{
         input "minutesLater", "number", title: "Delay (in minutes):", required: true
     }
     section("Disable auto lock when...") {
-    	input "modes", "mode", title: "Select mode(s) (optional)", multiple: true
+        input "modes", "mode", title: "Select mode(s) (optional)", multiple: true
     }
-    section( "Notifications" ) {
-        input("recipients", "contact", title: "Send notifications to", required: false) {
-            input "phoneNumber", "phone", title: "Warn with text message (optional)", description: "Phone Number", required: false
+    section( "Notifications for Success" ) {
+        input("recipients", "contact", title: "Send notifications to", required: false, multiple: true) {
+            input "sendPushSuccess", "enum", title: "Send a push notification?", options: ["Yes", "No"], required: false
+            input "phoneSuccess", "phone", title: "Send a Text Message?", required: false
+        }
+    }
+    section( "Notifications for Errors" ) {
+        input("recipients", "contact", title: "Send notifications to", required: false, mulitple: true) {
+            input "sendPushError", "enum", title: "Send a push notification?", options: ["Yes", "No"], required: false
+            input "phoneError", "phone", title: "Send a Text Message?", required: false
         }
     }
 }
 
-def installed(){
+def installed () {
     initialize()
 }
 
-def updated(){
+def updated () {
     unsubscribe()
     unschedule()
     initialize()
 }
 
-def initialize(){
+def notifyError (msg) {
+    if (sendPushError == 'Yes') {
+        sendPush("Auto Lock Doors: ${msg}")
+    }
+    if (phoneError) {
+        sendSms(phoneError, "Auto Lock Doors: ${msg}")
+    }
+}
+def notifySuccess (msg) {
+  if (sendPushSuccess == 'Yes') {
+      sendPush("Auto Lock Doors: ${msg}")
+  }
+  if (phoneSuccess) {
+      sendSms(phoneSuccess, "Auto Lock Doors: ${msg}")
+  }
+}
+
+def initialize () {
     log.debug "Settings: ${settings}"
-    locks.each {
-    	subscribe(it, "lock", doorHandler, [filterEvents: false])
-        it.lock()
-    }
-}
-
-def lockDoor(){
-    log.debug "Locking the doors."
-    locks.each { it.lock() }
-    if (location.contactBookEnabled) {
-        if (recipients) {
-            log.debug ("Sending Push Notification...")
-            sendNotificationToContacts( "Selected doors were locked after one was unlocked for ${minutesLater} minutes!", recipients)
+    try {
+        locks.each {
+           subscribe(it, "lock", doorHandler, [filterEvents: false])
+           it.lock()
         }
+    } catch (all) {
+        notifyError("failed to initialize")
     }
-    if (phoneNumber) {
-        log.debug("Sending text message...")
-        sendSms( phoneNumber, "Selected doors were locked after one was unlocked for ${minutesLater} minutes!")
-    }
+
 }
 
-def doorHandler(evt){
-    log.debug("Handling event: " + evt.value)
+def lockDoors () {
     if (modes.contains(location.mode)) {
-    	log.debug("Not running because location is in disabled mode: " + location.currentMode)
+        notifyError("doors not locked because mode is ${location.mode}")
     } else {
-    	log.debug("Current mode: " + location.currentMode + " Disabled mode: " + modes)
-        def unlocked = locks.find {it.latestValue("lock") == "unlocked" }
-        if (unlocked && evt.value == "unlocked") {
-            log.debug("Scheduling lock because ${unlocked} was unlocked")
-            runIn( (minutesLater * 60), lockDoor ) // ...schedule (in minutes) to lock.
+        log.debug "Locking the doors."
+        try {
+            locks.each { it.lock() }
+            notifySuccess("Doors Locked")
+        } catch (all) {
+            notifyError("encountered an error locking the door(s)")
         }
-        else if (!unlocked && evt.value == "locked") { // If a person manually locks it then...
-            unschedule( lockDoor ) // ...we don't need to lock it later.
+    }
+}
+
+def doorHandler (evt) {
+    log.debug("Handling event: " + evt.value)
+    def unlocked = locks.find {it.latestValue("lock") == "unlocked" }
+    if (unlocked && evt.value == "unlocked") {
+        log.debug("Scheduling lock because ${unlocked} was unlocked")
+        try {
+            runIn((minutesLater * 60), lockDoors) // ...schedule (in minutes) to lock.
+        } catch (all) {
+            notifyError("failed to schedule door locking. Doors will not auto lock");
         }
+    } else {
+        log.debug "Not scheduling because ${evt.value}"
     }
 }
